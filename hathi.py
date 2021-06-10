@@ -42,8 +42,8 @@ async def try_connection(host: str, database: str, dictionary: str):
                 data = await conn.fetch("SELECT * from pg_user;")
                 yield Match(username, password, host, database, data)
                 await conn.close()
-            except asyncpg.exceptions.InvalidAuthorizationSpecificationError:
-                pass  # bad username
+            except asyncpg.exceptions._base.PostgresError:
+                pass  # bad username, password, access or other
             except asyncio.TimeoutError:
                 pass  # closed
 
@@ -74,10 +74,19 @@ if __name__ == "__main__":
     parser.add_argument(
         "--dictionary", type=str, default="credentials.txt", help="dictionary list"
     )
+    parser.add_argument(
+        "--results", type=str, help="path to a results file"
+    )
     args = parser.parse_args()
     start = time.time()
 
     results = asyncio.run(scan(args.hosts, args.dictionary))
+
+    if args.results:
+        with open(args.results) as results_f:
+            results_f.writelines(results)
+
     for result in results:
         print(f"{result}")
+
     print("Completed scan in {0} seconds".format(time.time() - start))
