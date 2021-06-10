@@ -2,6 +2,8 @@
 
 A postgres host scanner and dictionary attack tool.
 
+You'll need to supply your own dictionary (`username:password`) from SecLists. An example has been included for illustration purposes.
+
 ```default
 usage: hathi.py [-h] [--dictionary DICTIONARY] [--results RESULTS] host [host ...]
 
