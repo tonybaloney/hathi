@@ -1,11 +1,9 @@
 # Hathi
 
-A postgres host scanner and dictionary attack tool.
-
-You'll need to supply your own dictionary (`username:password`) from SecLists. An example has been included for illustration purposes.
+A postgres host scanner and dictionary attack tool. Comes with a script (`filter_pass.py`) to filter a series of password lists based on password strength.
 
 ```default
-usage: hathi.py [-h] [--dictionary DICTIONARY] [--results RESULTS] host [host ...]
+usage: hathi.py [-h] [--usernames USERNAMES] [--passwords PASSWORDS] [--results RESULTS] host [host ...]
 
 Port scan and dictionary attack postgresql servers.
 
@@ -14,7 +12,9 @@ positional arguments:
 
 optional arguments:
   -h, --help            show this help message and exit
-  --dictionary DICTIONARY
-                        dictionary list
+  --usernames USERNAMES
+                        password list
+  --passwords PASSWORDS
+                        password list
   --results RESULTS     path to a results file
 ```

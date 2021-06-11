@@ -1,0 +1,13 @@
+admin
+administrator
+postgres
+pga
+superuser
+dba
+web
+website
+django
+flask
+drupal
+wordpress
+postgresadmin
