@@ -19,14 +19,14 @@ import argparse
 import time
 import asyncio
 import asyncpg
-from typing import List
+from typing import List, Optional
 from collections import namedtuple
 
 timeout = 1.0
-SSL_MODE = "prefer"  # Try SSL first and fallback to non-SSL if failed
+SSL_MODE = "require"  # Try SSL first and fallback to non-SSL if failed
 POSTGRES_PORT = 5432
 DATABASE_NAME = "postgres"
-DEBUG=False
+DEBUG=True
 
 Match = namedtuple("Match", "username password host database data")
 
@@ -44,10 +44,12 @@ async def try_hosts(hosts: List[str], port: int = POSTGRES_PORT):
             pass  # closed
 
 
-async def try_connection(host: str, database: str, usernames: str, passwords: str, debug=DEBUG):
+async def try_connection(host: str, database: str, usernames: str, passwords: str, hostname: Optional[str] = None):
     with open(usernames, "r") as username_list:
         for username in username_list:
             username = username.strip()
+            if hostname:
+                username = f"{username}@{hostname}"
             with open(passwords, "r") as password_list:
                 for password in password_list:
                     password = password.strip()
@@ -60,31 +62,30 @@ async def try_connection(host: str, database: str, usernames: str, passwords: st
                             ssl=SSL_MODE,
                             timeout=timeout,
                         )
-                        data = await conn.fetch("SELECT * from pg_user;")
-                        if debug:
+                        data = await conn.fetch("select table_name from information_schema.tables where table_schema='public';")
+                        if DEBUG:
                             print(f"Matched {username}:{password} on {host}")
                         yield Match(username, password, host, database, data)
                         await conn.close()
                         break
+                    except asyncpg.exceptions.InvalidPasswordError as pe:
+                        if DEBUG:
+                            print(f"Invalid password {password} : ({pe})")
                     except asyncpg.exceptions.InvalidAuthorizationSpecificationError as pe:
-                        if debug:
+                        if DEBUG:
                             print(f"Invalid username {username} : ({pe})")
                         break
-                    except asyncpg.exceptions.InvalidPasswordError as pe:
-                        if debug:
-                            print(f"Invalid password {password} : ({pe})")
-                        break
                     except asyncpg.exceptions._base.PostgresError as pe:
-                        if debug:
+                        if DEBUG:
                             print(f"Failed {username}:{password} on {host} {pe} {type(pe)}")
-                        pass  # bad username, password, access or other
+                        pass
                     except asyncio.TimeoutError:
-                        if debug:
+                        if DEBUG:
                             print(f"Timeout {username}:{password} on {host}")
                         pass  # closed
 
 
-async def scan(hosts: List[str], usernames: str, passwords: str):
+async def scan(hosts: List[str], usernames: str, passwords: str, hostname: Optional[str] = None):
     open_hosts = []
     async for open_host in try_hosts(hosts):
         open_hosts.append(open_host)
@@ -94,7 +95,7 @@ async def scan(hosts: List[str], usernames: str, passwords: str):
 
     for host in open_hosts:
         async for match in try_connection(
-            host, DATABASE_NAME, usernames, passwords
+            host, DATABASE_NAME, usernames, passwords, hostname
         ):
             matched_connections.append(match)
     return matched_connections
@@ -116,10 +117,14 @@ if __name__ == "__main__":
     parser.add_argument(
         "--results", type=str, help="path to a results file"
     )
+    parser.add_argument(
+        "--hostname", type=str, help="an @hostname to append to the usernames"
+    )
     args = parser.parse_args()
     start = time.time()
-
-    results = asyncio.run(scan(args.hosts, args.usernames, args.passwords))
+    if DEBUG:
+        print(args)
+    results = asyncio.run(scan(args.hosts, args.usernames, args.passwords, args.hostname))
 
     if args.results:
         with open(args.results) as results_f:
