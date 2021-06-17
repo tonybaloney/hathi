@@ -20,3 +20,5 @@ optional arguments:
   --hostname HOSTNAME   an @hostname to append to the usernames
   --verbose
 ```
+
+Use a wordlist generator like [this one](https://github.com/zzztor/intelligence-wordlist-generator) or [this one](https://github.com/sc0tfree/mentalist) to create more effective password lists. 
