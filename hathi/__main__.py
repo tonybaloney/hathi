@@ -3,7 +3,7 @@ Requirements:
  > pip install -r requirements.txt
 
 
-Usage: hathi.py [-h] [--usernames USERNAMES] [--passwords PASSWORDS] [--results RESULTS] [--hostname HOSTNAME] [--verbose] host [host ...]
+Usage: hathi [-h] [--usernames USERNAMES] [--passwords PASSWORDS] [--results RESULTS] [--hostname HOSTNAME] [--verbose] host [host ...]
 
 Port scan and dictionary attack postgresql servers.
 
@@ -106,7 +106,7 @@ async def scan(hosts: List[str], usernames: str, passwords: str, hostname: Optio
     return matched_connections
 
 
-if __name__ == "__main__":
+def main():
     parser = argparse.ArgumentParser(
         description="Port scan and dictionary attack postgresql servers."
     )
@@ -141,3 +141,8 @@ if __name__ == "__main__":
         print(f"{result}")
 
     print("Completed scan in {0} seconds".format(time.time() - start))
+
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,17 @@
+[build-system]
+requires = ["flit_core >=3.2,<4"]
+build-backend = "flit_core.buildapi"
+
+[project]
+name = "hathi"
+authors = [{name = "Anthony Shaw"}]
+readme = "README.md"
+classifiers = ["License :: OSI Approved :: MIT License"]
+dynamic = ["version", "description"]
+
+
+[tool.flit.scripts]
+hathi = "hathi.__main__:main"
+
+[project.urls]
+Home = "https://github.com/tonybaloney/hathi"
