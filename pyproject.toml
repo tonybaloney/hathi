@@ -8,7 +8,10 @@ authors = [{name = "Anthony Shaw"}]
 readme = "README.md"
 classifiers = ["License :: OSI Approved :: MIT License"]
 dynamic = ["version", "description"]
+dependencies = ["asyncpg"]
 
+[project.optional-dependencies]
+mssql = ["pymssql==2.1.5"]
 
 [project.scripts]
 hathi = "hathi.__main__:main"
