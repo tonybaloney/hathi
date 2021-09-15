@@ -26,8 +26,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
 import asyncio
 import asyncpg
-import pymssql
-from typing import List, Optional
+
+from typing import List, Optional, Tuple
 from collections import namedtuple
 from enum import Enum
 from rich.progress import Progress, BarColumn, ProgressColumn, Task
@@ -36,7 +36,14 @@ from rich.console import Console
 from rich.table import Table
 import json
 
-timeout = 1.0
+try:
+    import pymssql
+
+    MSSQL_SUPPORT = True
+except ImportError:
+    MSSQL_SUPPORT = False
+
+DEFAULT_TIMEOUT = 1.0  # For initial TCP scan
 SSL_MODE = (
     "require"  # require = required, Try SSL first and fallback to non-SSL if failed
 )
@@ -49,7 +56,7 @@ class LoginAttemptSpeedColumn(ProgressColumn):
         speed = task.finished_speed or task.speed
         if speed is None:
             return Text("?", style="progress.data.speed")
-        return Text(f"{speed:>3.0f} attempt/s", style="progress.data.speed")
+        return Text(f"{speed:.2f} attempt/s", style="progress.data.speed")
 
 
 class TotalAttemptColumn(ProgressColumn):
@@ -68,29 +75,33 @@ class PgResult(Enum):
     BadPassword = 1
     Success = 2
     BadUsername = 3
-    Other = 4
+    Timeout = 4
+    PostgresError = 5
 
 
 DEFAULT_PORTS = {HostType.Postgres: 5432, HostType.Mssql: 1433}
 DEFAULT_DATABASE_NAME = {HostType.Postgres: "postgres", HostType.Mssql: "master"}
 
-Match = namedtuple("Match", "username password host database data")
+Match = namedtuple("Match", "username password host database data host_type")
 
 
-async def try_hosts(hosts: List[str], port: int):
+async def try_hosts(hosts: List[str]):
     found = 0
     for host in hosts:
-        try:
-            future = asyncio.open_connection(host=host, port=port)
-            _, w = await asyncio.wait_for(future, timeout=timeout)
-            yield host
-            found += 1
-            w.close()
-        except (asyncio.TimeoutError, OSError):
-            print(f"Could not connect to {host}")
+        for host_type, port in DEFAULT_PORTS.items():
+            try:
+                future = asyncio.open_connection(host=host, port=port)
+                _, w = await asyncio.wait_for(future, timeout=DEFAULT_TIMEOUT)
+                yield host, host_type
+                found += 1
+                w.close()
+            except (asyncio.TimeoutError, OSError):
+                pass
 
 
-async def _pg_try_host(host, username, password, database):
+async def _pg_try_host(
+    host: str, username: str, password: str, database: str
+) -> Tuple[PgResult, str, str, str]:
     try:
         conn = await asyncpg.connect(
             user=username,
@@ -98,18 +109,18 @@ async def _pg_try_host(host, username, password, database):
             database=database,
             host=host,
             ssl=SSL_MODE,
-            timeout=timeout,
+            timeout=5,
         )
         await conn.close()
-        return True
+        return PgResult.Success, host, username, password
     except asyncpg.exceptions.InvalidPasswordError:
-        return BAD_PASSWORD  # TODO : Signal bad login vs bad password
+        return PgResult.BadPassword, host, username, password
     except asyncpg.exceptions.InvalidAuthorizationSpecificationError:
-        return False
+        return PgResult.BadUsername, host, username, password
     except asyncpg.exceptions._base.PostgresError:
-        return False
+        return PgResult.PostgresError, host, username, password
     except asyncio.TimeoutError:
-        return False
+        return PgResult.Timeout, host, username, password
 
 
 async def pg_try_connection(
@@ -129,22 +140,48 @@ async def pg_try_connection(
         LoginAttemptSpeedColumn(),
     ) as progress:
         with open(usernames, "r") as username_list:
-            for username in username_list:
-                username = username.strip()
+            for _username in username_list:
+                username = _username.strip()
                 if hostname:
                     username = f"{username}@{hostname}"
                 with open(passwords, "r") as password_list:
                     _passwords = password_list.readlines()
                     task = progress.add_task(
-                        f"[red]Trying {username} on {host}...",
+                        f"[red]Trying {_username}...",
                         total=len(_passwords),
                         visible=verbose,
                     )
                     for password in _passwords:
-                        password = password.strip()
-                        progress.update(
-                            task, advance=1, description=f"{username}:{password}"
-                        )
+                        try:
+                            result, host, username, password = await _pg_try_host(
+                                host, username, password.strip(), database
+                            )
+                            progress.update(task, advance=1)
+                        except Exception as exc:
+                            print(exc)
+                        else:
+                            if result == PgResult.Success:
+                                yield Match(
+                                    username,
+                                    password,
+                                    host,
+                                    database,
+                                    {},
+                                    HostType.Postgres,
+                                )
+                                if not multiple:
+                                    progress.stop()
+                                    return
+                            elif result == PgResult.BadPassword:
+                                pass
+                            elif result == PgResult.BadUsername:
+                                progress.stop()
+                                break
+                            elif result == PgResult.Timeout:
+                                pass
+                            elif result == PgResult.PostgresError:
+                                progress.stop()
+                                break
 
 
 def _mssql_try_host(host, username, password, database):
@@ -209,7 +246,14 @@ def mssql_try_connection(
                                 pass
                             else:
                                 if success:
-                                    yield Match(username, password, host, database, {})
+                                    yield Match(
+                                        username,
+                                        password,
+                                        host,
+                                        database,
+                                        {},
+                                        HostType.Mssql,
+                                    )
                                     if not multiple:
                                         executor.shutdown(cancel_futures=True)
                                         progress.stop()
@@ -222,25 +266,22 @@ async def scan(
     passwords: str,
     hostname: Optional[str] = None,
     verbose=False,
-    host_type: HostType = HostType.Postgres,
     multiple: bool = False,
 ):
     open_hosts = []
-    async for open_host in try_hosts(hosts, DEFAULT_PORTS[host_type]):
+    async for open_host in try_hosts(hosts):
         open_hosts.append(open_host)
-
-    database = DEFAULT_DATABASE_NAME[host_type]
 
     matched_connections = []
 
-    if host_type == HostType.Postgres:
-        for host in open_hosts:
+    for host, host_type in open_hosts:
+        database = DEFAULT_DATABASE_NAME[host_type]
+        if host_type == HostType.Postgres:
             async for match in pg_try_connection(
                 host, database, usernames, passwords, hostname, verbose, multiple
             ):
                 matched_connections.append(match)
-    elif host_type == HostType.Mssql:
-        for host in open_hosts:
+        elif host_type == HostType.Mssql:
             for match in mssql_try_connection(
                 host, database, usernames, passwords, hostname, verbose, multiple
             ):
@@ -264,8 +305,6 @@ def main():
     parser.add_argument(
         "--hostname", type=str, help="an @hostname to append to the usernames"
     )
-    parser.add_argument("--mssql", action="store_true", help="Host is MSSQL")
-    parser.add_argument("--postgres", action="store_true", help="Host is Postgres")
     parser.add_argument("--json", action="store_true", help="Output in JSON")
     parser.add_argument(
         "--multiple",
@@ -276,8 +315,6 @@ def main():
     args = parser.parse_args()
     start = time.time()
 
-    host_type = HostType.Mssql if args.mssql else HostType.Postgres
-
     results: "List[Match]" = asyncio.run(
         scan(
             args.hosts,
@@ -285,7 +322,6 @@ def main():
             args.passwords,
             args.hostname,
             verbose=not args.json,
-            host_type=host_type,
             multiple=args.multiple,
         )
     )
@@ -299,6 +335,7 @@ def main():
                         "database": result.database,
                         "username": result.username,
                         "password": result.password,
+                        "type": result.host_type,
                     }
                     for result in results
                 ]
@@ -308,13 +345,18 @@ def main():
         table = Table(title="Results")
 
         table.add_column("Host", justify="right", style="cyan", no_wrap=True)
+        table.add_column("Type", justify="right", style="cyan", no_wrap=True)
         table.add_column("Database", style="magenta")
         table.add_column("Username", style="magenta")
         table.add_column("Password", justify="right", style="green")
 
         for result in results:
             table.add_row(
-                result.host, result.database, result.username, result.password
+                result.host,
+                result.host_type,
+                result.database,
+                result.username,
+                result.password,
             )
 
         console = Console()
