@@ -67,6 +67,7 @@ async def pg_try_connection(
     passwords: str,
     hostname: Optional[str] = None,
     verbose=False,
+    multiple=False,
 ):
     with open(usernames, "r") as username_list:
         for username in username_list:
@@ -92,7 +93,10 @@ async def pg_try_connection(
                             print(f"Matched {username}:{password} on {host}")
                         yield Match(username, password, host, database, data)
                         await conn.close()
-                        break
+                        if multiple:
+                            break
+                        else:
+                            return
                     except asyncpg.exceptions.InvalidPasswordError as pe:
                         if verbose:
                             print(f"Invalid password {password} : ({pe})")
@@ -119,6 +123,7 @@ def mssql_try_connection(
     passwords: str,
     hostname: Optional[str] = None,
     verbose=False,
+    multiple=False,
 ):
     with open(usernames, "r") as username_list:
         for username in username_list:
@@ -140,7 +145,10 @@ def mssql_try_connection(
                             print(f"Matched {username}:{password} on {host}")
                         yield Match(username, password, host, database, {})
                         conn.close()
-                        break
+                        if multiple:
+                            break
+                        else:
+                            return
                     except pymssql.OperationalError:
                         if verbose:
                             print(f"Invalid username/password {username} : {password}")
@@ -153,6 +161,7 @@ async def scan(
     hostname: Optional[str] = None,
     verbose=False,
     host_type: HostType = HostType.Postgres,
+    multiple: bool = False,
 ):
     open_hosts = []
     async for open_host in try_hosts(hosts, DEFAULT_PORTS[host_type]):
@@ -166,23 +175,13 @@ async def scan(
     if host_type == HostType.Postgres:
         for host in open_hosts:
             async for match in pg_try_connection(
-                host,
-                database,
-                usernames,
-                passwords,
-                hostname,
-                verbose,
+                host, database, usernames, passwords, hostname, verbose, multiple
             ):
                 matched_connections.append(match)
     elif host_type == HostType.Mssql:
         for host in open_hosts:
             for match in mssql_try_connection(
-                host,
-                database,
-                usernames,
-                passwords,
-                hostname,
-                verbose,
+                host, database, usernames, passwords, hostname, verbose, multiple
             ):
                 matched_connections.append(match)
     return matched_connections
@@ -206,9 +205,14 @@ def main():
         "--hostname", type=str, help="an @hostname to append to the usernames"
     )
     parser.add_argument("--verbose", action="store_true", help="Enable verbose logging")
+    parser.add_argument("--mssql", action="store_true", help="Host is MSSQL")
+    parser.add_argument("--postgres", action="store_true", help="Host is Postgres")
     parser.add_argument(
-        "--mssql", action="store_true", help="an @hostname to append to the usernames"
+        "--multiple",
+        action="store_true",
+        help="Seek multiple username/password pairs on a single host",
     )
+
     args = parser.parse_args()
     start = time.time()
 
@@ -222,6 +226,7 @@ def main():
             args.hostname,
             verbose=args.verbose,
             host_type=host_type,
+            multiple=args.multiple,
         )
     )
 
