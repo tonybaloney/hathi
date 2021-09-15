@@ -22,6 +22,7 @@ optional arguments:
 """
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
 import asyncio
 import asyncpg
@@ -29,11 +30,23 @@ import pymssql
 from typing import List, Optional
 from collections import namedtuple
 from enum import Enum
+from rich.progress import Progress, BarColumn, ProgressColumn
+from rich.text import Text
 
 timeout = 1.0
 SSL_MODE = (
     "require"  # require = required, Try SSL first and fallback to non-SSL if failed
 )
+POOL_SIZE = 10
+
+
+class LoginAttemptSpeedColumn(ProgressColumn):
+    def render(self, task):
+        """Show data transfer speed."""
+        speed = task.finished_speed or task.speed
+        if speed is None:
+            return Text("?", style="progress.data.speed")
+        return Text(f"{speed:>3.0f} attempt/s", style="progress.data.speed")
 
 
 class HostType(Enum):
@@ -69,51 +82,79 @@ async def pg_try_connection(
     verbose=False,
     multiple=False,
 ):
-    with open(usernames, "r") as username_list:
-        for username in username_list:
-            username = username.strip()
-            if hostname:
-                username = f"{username}@{hostname}"
-            with open(passwords, "r") as password_list:
-                for password in password_list:
-                    password = password.strip()
-                    try:
-                        conn = await asyncpg.connect(
-                            user=username,
-                            password=password,
-                            database=database,
-                            host=host,
-                            ssl=SSL_MODE,
-                            timeout=timeout,
+    with Progress(
+        "[progress.description]{task.description}",
+        BarColumn(),
+        "[progress.percentage]{task.percentage:>3.0f}%",
+        LoginAttemptSpeedColumn(),
+    ) as progress:
+        with open(usernames, "r") as username_list:
+            for username in username_list:
+                username = username.strip()
+                if hostname:
+                    username = f"{username}@{hostname}"
+                with open(passwords, "r") as password_list:
+                    _passwords = password_list.readlines()
+                    task = progress.add_task(
+                        f"[red]Trying {username} on {host}...", total=len(_passwords)
+                    )
+                    for password in _passwords:
+                        password = password.strip()
+                        progress.update(
+                            task, advance=1, description=f"{username}:{password}"
                         )
-                        data = await conn.fetch(
-                            "select table_name from information_schema.tables where table_schema='public';"
-                        )
-                        if verbose:
-                            print(f"Matched {username}:{password} on {host}")
-                        yield Match(username, password, host, database, data)
-                        await conn.close()
-                        if multiple:
-                            break
-                        else:
-                            return
-                    except asyncpg.exceptions.InvalidPasswordError as pe:
-                        if verbose:
-                            print(f"Invalid password {password} : ({pe})")
-                    except asyncpg.exceptions.InvalidAuthorizationSpecificationError as pe:
-                        if verbose:
-                            print(f"Invalid username {username} : ({pe})")
-                        break
-                    except asyncpg.exceptions._base.PostgresError as pe:
-                        if verbose:
-                            print(
-                                f"Failed {username}:{password} on {host} {pe} {type(pe)}"
+                        try:
+                            conn = await asyncpg.connect(
+                                user=username,
+                                password=password,
+                                database=database,
+                                host=host,
+                                ssl=SSL_MODE,
+                                timeout=timeout,
                             )
-                        pass
-                    except asyncio.TimeoutError:
-                        if verbose:
-                            print(f"Timeout {username}:{password} on {host}")
-                        pass  # closed
+                            data = await conn.fetch(
+                                "select table_name from information_schema.tables where table_schema='public';"
+                            )
+                            if verbose:
+                                print(f"Matched {username}:{password} on {host}")
+                            yield Match(username, password, host, database, data)
+                            await conn.close()
+                            if multiple:
+                                break
+                            else:
+                                progress.stop()
+                                return
+                        except asyncpg.exceptions.InvalidPasswordError as pe:
+                            if verbose:
+                                print(f"Invalid password {password} : ({pe})")
+                        except asyncpg.exceptions.InvalidAuthorizationSpecificationError as pe:
+                            if verbose:
+                                print(f"Invalid username {username} : ({pe})")
+                            break
+                        except asyncpg.exceptions._base.PostgresError as pe:
+                            if verbose:
+                                print(
+                                    f"Failed {username}:{password} on {host} {pe} {type(pe)}"
+                                )
+                            pass
+                        except asyncio.TimeoutError:
+                            if verbose:
+                                print(f"Timeout {username}:{password} on {host}")
+                            pass  # closed
+
+
+def _mssql_try_host(host, username, password, database):
+    try:
+        conn = pymssql.connect(
+            host,
+            username,
+            password,
+            database,
+        )
+        conn.close()
+        return True
+    except pymssql.OperationalError:
+        return False
 
 
 def mssql_try_connection(
@@ -125,33 +166,61 @@ def mssql_try_connection(
     verbose=False,
     multiple=False,
 ):
-    with open(usernames, "r") as username_list:
-        for username in username_list:
-            username = username.strip()
-            if hostname:
-                username = f"{username}@{hostname}"
-            with open(passwords, "r") as password_list:
-                for password in password_list:
-                    password = password.strip()
-                    try:
-                        conn = pymssql.connect(
-                            host,
-                            username,
-                            password,
-                            database,
-                        )
+    with Progress(
+        "[progress.description]{task.description}",
+        BarColumn(),
+        "[progress.percentage]{task.percentage:>3.0f}%",
+        LoginAttemptSpeedColumn(),
+    ) as progress:
+        with open(usernames, "r") as username_list:
+            for username in username_list:
+                username = username.strip()
+                if hostname:
+                    username = f"{username}@{hostname}"
+                with open(passwords, "r") as password_list:
+                    _passwords = password_list.readlines()
+                    task = progress.add_task(
+                        f"[red]Trying {username}...", total=len(_passwords)
+                    )
+                    with ThreadPoolExecutor(max_workers=POOL_SIZE) as executor:
+                        login_attempts = {
+                            executor.submit(
+                                _mssql_try_host,
+                                host,
+                                username,
+                                password.strip(),
+                                database,
+                            ): (host, username, password.strip())
+                            for password in _passwords
+                        }
+                        for future in as_completed(login_attempts):
+                            host, username, password = login_attempts[future]
+                            progress.update(task, advance=1)
+                            try:
+                                success = future.result()
+                            except Exception as exc:
+                                print(
+                                    "%r generated an exception: %s"
+                                    % (host, username, password, exc)
+                                )
+                            else:
+                                if success:
+                                    if verbose:
+                                        print(
+                                            f"Matched {username}:{password} on {host}"
+                                        )
+                                    yield Match(username, password, host, database, {})
 
-                        if verbose:
-                            print(f"Matched {username}:{password} on {host}")
-                        yield Match(username, password, host, database, {})
-                        conn.close()
-                        if multiple:
-                            break
-                        else:
-                            return
-                    except pymssql.OperationalError:
-                        if verbose:
-                            print(f"Invalid username/password {username} : {password}")
+                                    if multiple:
+                                        break
+                                    else:
+                                        progress.stop()
+                                        return
+                                else:
+                                    if verbose:
+                                        print(
+                                            f"Invalid username/password {username}:{password}"
+                                        )
 
 
 async def scan(
