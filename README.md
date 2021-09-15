@@ -1,6 +1,24 @@
 # Hathi
 
+[![PyPI version](https://badge.fury.io/py/hathi.svg)](https://badge.fury.io/py/hathi)
+
 A SQL host scanner and dictionary attack tool. Comes with a script (`filter_pass.py`) to filter a series of password lists based on password strength.
+
+## Installation
+
+Install using PyPI to install the Postgres driver
+
+```console
+pip install hathi
+```
+
+For the optional MSSQL support, install
+
+```console
+pip install "hathi[mssql]"
+```
+
+## Usage
 
 ```default
 usage: hathi [-h] [--usernames USERNAMES] [--passwords PASSWORDS] [--results RESULTS] [--hostname HOSTNAME] [--verbose] [--mssql] [--postgres] [--multiple] host [host ...]
