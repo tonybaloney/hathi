@@ -21,7 +21,7 @@ pip install "hathi[mssql]"
 ## Usage
 
 ```default
-usage: hathi [-h] [--usernames USERNAMES] [--passwords PASSWORDS] [--hostname HOSTNAME] [--json] [--multiple] host [host ...]
+usage: hathi [-h] [--usernames USERNAMES] [--passwords PASSWORDS] [--hostname HOSTNAME] [--json] [--mssql] [--postgres] [--multiple] host [host ...]
 
 Port scan and dictionary attack PostgreSQL and MSSQL servers.
 
@@ -36,6 +36,8 @@ optional arguments:
                         password list
   --hostname HOSTNAME   an @hostname to append to the usernames
   --json                Output in JSON
+  --mssql               Force scanning hosts as MSSQL
+  --postgres            Force scanning hosts as Postgres
   --multiple            Seek multiple username/password pairs on a single host
 ```
 
