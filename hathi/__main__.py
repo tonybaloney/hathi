@@ -72,7 +72,7 @@ async def try_hosts(hosts: List[str], types_to_scan: Set[HostType]):
 
 async def scan(
     hosts: List[str],
-    usernames: str,
+    usernames: List[str],
     passwords: str,
     hostname: Optional[str] = None,
     verbose=False,
@@ -105,11 +105,20 @@ def main():
     parser.add_argument(
         "hosts", metavar="host", type=str, nargs="+", help="host to scan"
     )
+    parser.add_argument("--username", type=str, nargs="+", help="specific username")
     parser.add_argument(
-        "--usernames", type=str, default="usernames.txt", help="password list"
+        "--usernames",
+        type=str,
+        default="usernames.txt",
+        help="Path to plaintext username list file",
+        metavar="FILE",
     )
     parser.add_argument(
-        "--passwords", type=str, default="passwords.txt", help="password list"
+        "--passwords",
+        type=str,
+        default="passwords.txt",
+        help="Path to plaintext password list file",
+        metavar="FILE",
     )
     parser.add_argument(
         "--hostname", type=str, help="an @hostname to append to the usernames"
@@ -137,10 +146,16 @@ def main():
     else:
         types_to_scan = {HostType.Postgres, HostType.Mssql}
 
+    if args.username:
+        usernames = args.username
+    else:
+        with open(args.usernames, "r") as username_list:
+            usernames = username_list.readlines()
+
     results = asyncio.run(
         scan(
             args.hosts,
-            args.usernames,
+            usernames,
             args.passwords,
             args.hostname,
             verbose=not args.json,
