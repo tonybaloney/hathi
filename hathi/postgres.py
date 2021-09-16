@@ -8,20 +8,19 @@ SSL_MODE = (
 )
 
 
-def _pg_try_host(
+async def _pg_try_host(
     scanner: Scanner, host: str, username: str, password: str, database: str
 ) -> Tuple[ScanResult, str, str, str]:
     try:
-        conn = asyncio.run(
-            asyncpg.connect(
-                user=username,
-                password=password,
-                database=database,
-                host=host,
-                ssl=SSL_MODE,
-                timeout=5,
-            )
+        conn = await asyncpg.connect(
+            user=username,
+            password=password,
+            database=database,
+            host=host,
+            ssl=SSL_MODE,
+            timeout=5,
         )
+        await conn.close()
         return ScanResult.Success, host, username, password
     except asyncpg.exceptions.InvalidPasswordError:
         return ScanResult.BadPassword, host, username, password
@@ -36,3 +35,4 @@ def _pg_try_host(
 class PostgresScanner(Scanner):
     host_connect_func = _pg_try_host
     host_type = "postgres"
+    is_sync = False

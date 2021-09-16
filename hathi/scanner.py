@@ -1,3 +1,4 @@
+import asyncio
 from collections import namedtuple
 from enum import Enum
 from typing import Optional
@@ -9,7 +10,7 @@ Match = namedtuple("Match", "username password host database data host_type")
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
-POOL_SIZE = 20
+POOL_SIZE = 10
 
 
 class LoginAttemptSpeedColumn(ProgressColumn):
@@ -36,7 +37,17 @@ class ScanResult(Enum):
     Error = 5
 
 
+def call_async_func(func, host, username, password, database):
+    return asyncio.run(func(host, username, password, database))
+
+
+def call_sync_func(func, host, username, password, database):
+    return func(host, username, password, database)
+
+
 class Scanner:
+    is_sync = True
+
     def __init__(
         self,
         host: str,
@@ -64,7 +75,6 @@ class Scanner:
             "[progress.percentage]{task.percentage:>3.0f}%",
             TotalAttemptColumn(),
             LoginAttemptSpeedColumn(),
-            redirect_stdout=False,
         ) as progress:
             with open(self.usernames, "r") as username_list:
                 for _username in username_list:
@@ -74,28 +84,27 @@ class Scanner:
                     with open(self.passwords, "r") as password_list:
                         _passwords = password_list.readlines()
                         task = progress.add_task(
-                            f"[red]Trying {_username}...",
+                            f"[cyan]{_username}",
                             total=len(_passwords),
                             visible=self.verbose,
                         )
                         with ThreadPoolExecutor(max_workers=POOL_SIZE) as executor:
-                            login_attempts = {
+                            login_attempts = [
                                 executor.submit(
+                                    call_sync_func if self.is_sync else call_async_func,
                                     self.host_connect_func,
                                     self.host,
                                     username,
                                     password.strip(),
                                     self.database,
-                                ): (self.host, username, password.strip())
+                                )
                                 for password in _passwords
-                            }
+                            ]
                             for future in as_completed(login_attempts):
                                 progress.update(task, advance=1)
                                 try:
                                     result, host, username, password = future.result()
-                                    print(result, password)
                                 except Exception as exc:
-                                    print(exc)
                                     pass
                                 else:
                                     if result == ScanResult.Success:

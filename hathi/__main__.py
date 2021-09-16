@@ -28,7 +28,7 @@ from hathi.postgres import PostgresScanner
 import time
 import asyncio
 
-from typing import Dict, List, Optional, Type
+from typing import Dict, List, Optional, Set, Type
 from enum import Enum
 
 
@@ -45,6 +45,8 @@ class HostType(Enum):
     Mssql = "mssql"
 
 
+console = Console()
+
 DEFAULT_PORTS = {HostType.Postgres: 5432, HostType.Mssql: 1433}
 DEFAULT_DATABASE_NAME = {HostType.Postgres: "postgres", HostType.Mssql: "master"}
 SCANNER_CLS: Dict[HostType, Type[Scanner]] = {
@@ -53,10 +55,11 @@ SCANNER_CLS: Dict[HostType, Type[Scanner]] = {
 }
 
 
-async def try_hosts(hosts: List[str]):
+async def try_hosts(hosts: List[str], types_to_scan: Set[HostType]):
     found = 0
     for host in hosts:
-        for host_type, port in DEFAULT_PORTS.items():
+        for host_type in types_to_scan:
+            port = DEFAULT_PORTS[host_type]
             try:
                 future = asyncio.open_connection(host=host, port=port)
                 _, w = await asyncio.wait_for(future, timeout=DEFAULT_TIMEOUT)
@@ -74,15 +77,18 @@ async def scan(
     hostname: Optional[str] = None,
     verbose=False,
     multiple: bool = False,
+    types_to_scan: Set[HostType] = {HostType.Postgres, HostType.Mssql},
 ):
     open_hosts = []
-    async for open_host in try_hosts(hosts):
+    async for open_host in try_hosts(hosts, types_to_scan):
         open_hosts.append(open_host)
 
     matched_connections = []
 
     for host, host_type in open_hosts:
         database = DEFAULT_DATABASE_NAME[host_type]
+        if verbose:
+            console.print(f"[green]Scanning {host} as {host_type}")
         scanner = SCANNER_CLS[host_type](
             host, database, usernames, passwords, hostname, verbose, multiple
         )
@@ -110,6 +116,12 @@ def main():
     )
     parser.add_argument("--json", action="store_true", help="Output in JSON")
     parser.add_argument(
+        "--mssql", action="store_true", help="Force scanning hosts as MSSQL"
+    )
+    parser.add_argument(
+        "--postgres", action="store_true", help="Force scanning hosts as Postgres"
+    )
+    parser.add_argument(
         "--multiple",
         action="store_true",
         help="Seek multiple username/password pairs on a single host",
@@ -117,6 +129,13 @@ def main():
 
     args = parser.parse_args()
     start = time.time()
+
+    if args.mssql:
+        types_to_scan = {HostType.Mssql}
+    elif args.postgres:
+        types_to_scan = {HostType.Postgres}
+    else:
+        types_to_scan = {HostType.Postgres, HostType.Mssql}
 
     results = asyncio.run(
         scan(
@@ -126,6 +145,7 @@ def main():
             args.hostname,
             verbose=not args.json,
             multiple=args.multiple,
+            types_to_scan=types_to_scan,
         )
     )
 
@@ -162,9 +182,8 @@ def main():
                 result.password,
             )
 
-        console = Console()
         console.print(table)
-        print("Completed scan in {0} seconds".format(time.time() - start))
+        console.print("Completed scan in {0} seconds".format(time.time() - start))
 
 
 if __name__ == "__main__":
