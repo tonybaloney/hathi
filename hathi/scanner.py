@@ -1,0 +1,126 @@
+from collections import namedtuple
+from enum import Enum
+from typing import Optional
+
+from rich.progress import Progress, BarColumn, ProgressColumn, Task
+from rich.text import Text
+
+Match = namedtuple("Match", "username password host database data host_type")
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+
+POOL_SIZE = 20
+
+
+class LoginAttemptSpeedColumn(ProgressColumn):
+    def render(self, task: "Task"):
+        """Show data transfer speed."""
+        speed = task.finished_speed or task.speed
+        if speed is None:
+            return Text("?", style="progress.data.speed")
+        return Text(f"{speed:.2f} attempt/s", style="progress.data.speed")
+
+
+class TotalAttemptColumn(ProgressColumn):
+    def render(self, task: "Task"):
+        return Text(
+            f"{task.completed}/{task.total} passwords", style="progress.data.speed"
+        )
+
+
+class ScanResult(Enum):
+    Success = 1
+    BadPassword = 2
+    BadUsername = 3
+    Timeout = 4
+    Error = 5
+
+
+class Scanner:
+    def __init__(
+        self,
+        host: str,
+        database: str,
+        usernames: str,
+        passwords: str,
+        hostname: Optional[str] = None,
+        verbose=False,
+        multiple=False,
+    ):
+        self.host = host
+        self.database = database
+        self.usernames = usernames
+        self.passwords = passwords
+        self.hostname = hostname
+        self.verbose = verbose
+        self.multiple = multiple
+
+    async def scan(
+        self,
+    ):
+        with Progress(
+            "[progress.description]{task.description}",
+            BarColumn(),
+            "[progress.percentage]{task.percentage:>3.0f}%",
+            TotalAttemptColumn(),
+            LoginAttemptSpeedColumn(),
+            redirect_stdout=False,
+        ) as progress:
+            with open(self.usernames, "r") as username_list:
+                for _username in username_list:
+                    username = _username.strip()
+                    if self.hostname:
+                        username = f"{username}@{self.hostname}"
+                    with open(self.passwords, "r") as password_list:
+                        _passwords = password_list.readlines()
+                        task = progress.add_task(
+                            f"[red]Trying {_username}...",
+                            total=len(_passwords),
+                            visible=self.verbose,
+                        )
+                        with ThreadPoolExecutor(max_workers=POOL_SIZE) as executor:
+                            login_attempts = {
+                                executor.submit(
+                                    self.host_connect_func,
+                                    self.host,
+                                    username,
+                                    password.strip(),
+                                    self.database,
+                                ): (self.host, username, password.strip())
+                                for password in _passwords
+                            }
+                            for future in as_completed(login_attempts):
+                                progress.update(task, advance=1)
+                                try:
+                                    result, host, username, password = future.result()
+                                    print(result, password)
+                                except Exception as exc:
+                                    print(exc)
+                                    pass
+                                else:
+                                    if result == ScanResult.Success:
+                                        yield Match(
+                                            username,
+                                            password,
+                                            host,
+                                            self.database,
+                                            {},
+                                            self.host_type,
+                                        )
+                                        if not self.multiple:
+                                            executor.shutdown(cancel_futures=True)
+                                            progress.stop()
+                                            return
+                                    elif result == ScanResult.BadPassword:
+                                        pass
+                                    elif result == ScanResult.Timeout:
+                                        progress.stop()
+                                        executor.shutdown(cancel_futures=True)
+                                        return
+                                    elif result == ScanResult.BadUsername:
+                                        progress.stop()
+                                        break
+                                    elif result == ScanResult.Error:
+                                        progress.stop()
+                                        executor.shutdown(cancel_futures=True)
+                                        return
