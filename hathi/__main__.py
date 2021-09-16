@@ -174,14 +174,15 @@ async def pg_try_connection(
                                     return
                             elif result == PgResult.BadPassword:
                                 pass
+                            elif result == PgResult.Timeout:
+                                progress.stop()
+                                return
                             elif result == PgResult.BadUsername:
                                 progress.stop()
                                 break
-                            elif result == PgResult.Timeout:
-                                pass
                             elif result == PgResult.PostgresError:
                                 progress.stop()
-                                break
+                                return
 
 
 def _mssql_try_host(host, username, password, database):
@@ -335,7 +336,7 @@ def main():
                         "database": result.database,
                         "username": result.username,
                         "password": result.password,
-                        "type": result.host_type,
+                        "type": str(result.host_type),
                     }
                     for result in results
                 ]
@@ -353,7 +354,7 @@ def main():
         for result in results:
             table.add_row(
                 result.host,
-                result.host_type,
+                str(result.host_type),
                 result.database,
                 result.username,
                 result.password,
