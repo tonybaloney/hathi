@@ -22,13 +22,14 @@ optional arguments:
 """
 
 import argparse
+from hathi.mysql import MysqlScanner
 from hathi.scanner import Scanner
 from hathi.mssql import MssqlScanner
 from hathi.postgres import PostgresScanner
 import time
 import asyncio
 
-from typing import Dict, List, Optional, Set, Type
+from typing import Dict, List, Optional, Set, Type, Union
 from enum import Enum
 
 
@@ -43,15 +44,21 @@ DEFAULT_TIMEOUT = 1.0  # For initial TCP scan
 class HostType(Enum):
     Postgres = "postgres"
     Mssql = "mssql"
+    Mysql = "mysql"
 
 
 console = Console()
 
-DEFAULT_PORTS = {HostType.Postgres: 5432, HostType.Mssql: 1433}
-DEFAULT_DATABASE_NAME = {HostType.Postgres: "postgres", HostType.Mssql: "master"}
+DEFAULT_PORTS = {HostType.Postgres: 5432, HostType.Mssql: 1433, HostType.Mysql: 3306}
+DEFAULT_DATABASE_NAME = {
+    HostType.Postgres: "postgres",
+    HostType.Mssql: "master",
+    HostType.Mysql: "mysql",
+}
 SCANNER_CLS: Dict[HostType, Type[Scanner]] = {
     HostType.Postgres: PostgresScanner,
     HostType.Mssql: MssqlScanner,
+    HostType.Mysql: MysqlScanner,
 }
 
 
@@ -72,7 +79,7 @@ async def try_hosts(hosts: List[str], types_to_scan: Set[HostType]):
 
 async def scan(
     hosts: List[str],
-    usernames: List[str],
+    usernames: Union[List[str], None],
     passwords: str,
     hostname: Optional[str] = None,
     verbose=False,
@@ -100,7 +107,7 @@ async def scan(
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Port scan and dictionary attack PostgreSQL and MSSQL servers."
+        description="Port scan and dictionary attack PostgreSQL, MSSQL and MySQL servers."
     )
     parser.add_argument(
         "hosts", metavar="host", type=str, nargs="+", help="host to scan"
@@ -109,7 +116,6 @@ def main():
     parser.add_argument(
         "--usernames",
         type=str,
-        default="usernames.txt",
         help="Path to plaintext username list file",
         metavar="FILE",
     )
@@ -131,6 +137,9 @@ def main():
         "--postgres", action="store_true", help="Force scanning hosts as Postgres"
     )
     parser.add_argument(
+        "--mysql", action="store_true", help="Force scanning hosts as Mysql"
+    )
+    parser.add_argument(
         "--multiple",
         action="store_true",
         help="Seek multiple username/password pairs on a single host",
@@ -143,14 +152,18 @@ def main():
         types_to_scan = {HostType.Mssql}
     elif args.postgres:
         types_to_scan = {HostType.Postgres}
+    elif args.mysql:
+        types_to_scan = {HostType.Mysql}
     else:
-        types_to_scan = {HostType.Postgres, HostType.Mssql}
+        types_to_scan = {HostType.Postgres, HostType.Mssql, HostType.Mysql}
 
     if args.username:
         usernames = args.username
-    else:
+    elif args.usernames:
         with open(args.usernames, "r") as username_list:
             usernames = username_list.readlines()
+    else:
+        usernames = None
 
     results = asyncio.run(
         scan(

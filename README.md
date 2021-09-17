@@ -4,6 +4,8 @@
 
 A SQL host scanner and dictionary attack tool. Comes with a script (`filter_pass.py`) to filter a series of password lists based on password strength.
 
+![Screenshot of hathi in action](hathi-mysql-demo.png)
+
 ## Installation
 
 Install using PyPI to install the Postgres driver
@@ -18,26 +20,33 @@ For the optional MSSQL support, install
 pip install "hathi[mssql]"
 ```
 
+For the optional MySQL support, install
+
+```console
+pip install "hathi[mysql]"
+```
+
 ## Usage
 
 ```default
-usage: hathi [-h] [--usernames USERNAMES] [--passwords PASSWORDS] [--hostname HOSTNAME] [--json] [--mssql] [--postgres] [--multiple] host [host ...]
+usage: hathi [-h] [--username USERNAME [USERNAME ...]] [--usernames FILE] [--passwords FILE] [--hostname HOSTNAME] [--json] [--mssql] [--postgres] [--mysql] [--multiple] host [host ...]
 
-Port scan and dictionary attack PostgreSQL and MSSQL servers.
+Port scan and dictionary attack PostgreSQL, MSSQL and MySQL servers.
 
 positional arguments:
   host                  host to scan
 
 optional arguments:
   -h, --help            show this help message and exit
-  --usernames USERNAMES
-                        password list
-  --passwords PASSWORDS
-                        password list
+  --username USERNAME [USERNAME ...]
+                        specific username
+  --usernames FILE      Path to plaintext username list file
+  --passwords FILE      Path to plaintext password list file
   --hostname HOSTNAME   an @hostname to append to the usernames
   --json                Output in JSON
   --mssql               Force scanning hosts as MSSQL
   --postgres            Force scanning hosts as Postgres
+  --mysql               Force scanning hosts as Mysql
   --multiple            Seek multiple username/password pairs on a single host
 ```
 

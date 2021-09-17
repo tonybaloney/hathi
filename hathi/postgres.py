@@ -7,6 +7,22 @@ SSL_MODE = (
     "require"  # require = required, Try SSL first and fallback to non-SSL if failed
 )
 
+PG_USERNAME_LIST = """
+admin
+administrator
+postgres
+pga
+superuser
+dba
+web
+website
+django
+flask
+drupal
+wordpress
+postgresadmin
+"""
+
 
 async def _pg_try_host(
     scanner: Scanner, host: str, username: str, password: str, database: str
@@ -36,3 +52,4 @@ class PostgresScanner(Scanner):
     host_connect_func = _pg_try_host
     host_type = "postgres"
     is_sync = False
+    default_usernames = PG_USERNAME_LIST

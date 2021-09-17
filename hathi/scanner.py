@@ -1,7 +1,7 @@
 import asyncio
 from collections import namedtuple
 from enum import Enum
-from typing import List, Optional
+from typing import List, Optional, Union
 
 from rich.progress import Progress, BarColumn, ProgressColumn, Task
 from rich.text import Text
@@ -46,13 +46,15 @@ def call_sync_func(func, host, username, password, database):
 
 
 class Scanner:
+    host_type = ""
+    default_usernames = """"""
     is_sync = True
 
     def __init__(
         self,
         host: str,
         database: str,
-        usernames: List[str],
+        usernames: Union[List[str], None],
         passwords: str,
         hostname: Optional[str] = None,
         verbose=False,
@@ -60,7 +62,14 @@ class Scanner:
     ):
         self.host = host
         self.database = database
-        self.usernames = usernames
+        if usernames:
+            self.usernames = usernames
+        else:
+            self.usernames = [
+                un.strip()
+                for un in self.default_usernames.splitlines()
+                if un.strip() != ""
+            ]
         self.passwords = passwords
         self.hostname = hostname
         self.verbose = verbose

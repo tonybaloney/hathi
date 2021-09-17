@@ -9,6 +9,20 @@ except ImportError:
     MSSQL_SUPPORT = False
 
 
+MSSQL_USERNAME_LIST = """
+admin
+administrator
+superuser
+dba
+web
+website
+django
+flask
+drupal
+wordpress
+"""
+
+
 def _mssql_try_host(
     scanner: Scanner, host, username, password, database
 ) -> Tuple[ScanResult, str, str, str]:
@@ -28,3 +42,4 @@ def _mssql_try_host(
 class MssqlScanner(Scanner):
     host_type = "mssql"
     host_connect_func = _mssql_try_host
+    default_usernames = MSSQL_USERNAME_LIST

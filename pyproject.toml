@@ -12,6 +12,7 @@ dependencies = ["asyncpg", "rich"]
 
 [project.optional-dependencies]
 mssql = ["pymssql==2.1.5"]
+mysql = ["mysqlclient"]
 
 [project.scripts]
 hathi = "hathi.__main__:main"
