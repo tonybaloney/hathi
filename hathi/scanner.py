@@ -137,6 +137,7 @@ class Scanner:
                                     return
                                 elif result == ScanResult.BadUsername:
                                     progress.stop()
+                                    executor.shutdown(cancel_futures=True)
                                     break
                                 elif result == ScanResult.Error:
                                     progress.stop()
