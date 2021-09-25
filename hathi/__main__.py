@@ -67,7 +67,7 @@ SCANNER_CLS: Dict[HostType, Type[Scanner]] = {
 
 async def try_hosts(
     hosts: List[str], types_to_scan: Set[HostType]
-) -> Generator[Tuple[str, Union[HostType, None]], None, None]:
+) -> Generator[Tuple[str, HostType, bool], None, None]:
     found = 0
     for host in hosts:
         for host_type in types_to_scan:
@@ -75,11 +75,11 @@ async def try_hosts(
             try:
                 future = asyncio.open_connection(host=host, port=port)
                 _, w = await asyncio.wait_for(future, timeout=DEFAULT_TIMEOUT)
-                yield host, host_type
+                yield host, host_type, True
                 found += 1
                 w.close()
             except (asyncio.TimeoutError, OSError):
-                yield host, None
+                yield host, host_type, False
 
 
 async def scan(
@@ -91,19 +91,21 @@ async def scan(
     multiple: bool = False,
     types_to_scan: Set[HostType] = {HostType.Postgres, HostType.Mssql},
 ):
-    open_hosts = []
+    open_hosts: List[Tuple[str, HostType]] = []
     with Progress(
         "[progress.description]{task.description}",
         BarColumn(),
         "[progress.percentage]{task.percentage:>3.0f}%",
     ) as progress:
         t = progress.add_task(
-            "Scanning hosts for open ports", total=len(hosts), visible=verbose
+            "Scanning hosts for open ports",
+            total=len(hosts) * len(types_to_scan),
+            visible=verbose,
         )
-        async for open_host in try_hosts(hosts, types_to_scan):
-            progress.update(t, advance=1, description=f"Scanned {open_host[0]}")
-            if open_host[1] is not None:
-                open_hosts.append(open_host)
+        async for host, host_type, is_open in try_hosts(hosts, types_to_scan):
+            progress.update(t, advance=1, description=f"Scanning {host}")
+            if is_open:
+                open_hosts.append((host, host_type))
 
     matched_connections = []
 
