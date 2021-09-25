@@ -29,7 +29,9 @@ pip install "hathi[mysql]"
 ## Usage
 
 ```default
-usage: hathi [-h] [--username USERNAME [USERNAME ...]] [--usernames FILE] [--passwords FILE] [--hostname HOSTNAME] [--json] [--mssql] [--postgres] [--mysql] [--multiple] host [host ...]
+usage: hathi [-h] [--username USERNAME [USERNAME ...]] [--range RANGE [RANGE ...]] [--usernames FILE] [--passwords FILE] [--hostname HOSTNAME]
+                   [--json] [--mssql] [--postgres] [--mysql] [--multiple]
+                   [host ...]
 
 Port scan and dictionary attack PostgreSQL, MSSQL and MySQL servers.
 
@@ -40,6 +42,8 @@ optional arguments:
   -h, --help            show this help message and exit
   --username USERNAME [USERNAME ...]
                         specific username
+  --range RANGE [RANGE ...]
+                        CIDR range, e.g. 192.168.1.0/24
   --usernames FILE      Path to plaintext username list file
   --passwords FILE      Path to plaintext password list file
   --hostname HOSTNAME   an @hostname to append to the usernames
