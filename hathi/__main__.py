@@ -32,7 +32,7 @@ from typing import Dict, Generator, List, Optional, Set, Tuple, Type, Union
 
 from rich.console import Console
 from rich.table import Table
-from rich.progress import Progress, BarColumn, ProgressColumn, Task
+from rich.progress import Progress, BarColumn
 
 from hathi.mssql import MssqlScanner
 from hathi.mysql import MysqlScanner
