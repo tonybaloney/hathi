@@ -90,6 +90,7 @@ async def scan(
     verbose=False,
     multiple: bool = False,
     types_to_scan: Set[HostType] = {HostType.Postgres, HostType.Mssql},
+    database: str = None,
 ):
     open_hosts: List[Tuple[str, HostType]] = []
     with Progress(
@@ -110,11 +111,16 @@ async def scan(
     matched_connections = []
 
     for host, host_type in open_hosts:
-        database = DEFAULT_DATABASE_NAME[host_type]
+        if not database:
+            _database = DEFAULT_DATABASE_NAME[host_type]
+        else:
+            _database = database
         if verbose:
-            console.print(f"[green]Scanning {host} as {host_type}")
+            console.print(
+                f"[green]Scanning {host} as {host_type} with database {_database}"
+            )
         scanner = SCANNER_CLS[host_type](
-            host, database, usernames, passwords, hostname, verbose, multiple
+            host, _database, usernames, passwords, hostname, verbose, multiple
         )
         async for match in scanner.scan():
             matched_connections.append(match)
@@ -164,6 +170,7 @@ def main():
         action="store_true",
         help="Seek multiple username/password pairs on a single host",
     )
+    parser.add_argument("--database", type=str, help="try a specific database name")
 
     args = parser.parse_args()
     hosts = args.hosts
@@ -205,6 +212,7 @@ def main():
             verbose=not args.json,
             multiple=args.multiple,
             types_to_scan=types_to_scan,
+            database=args.database,
         )
     )
 

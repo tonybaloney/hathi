@@ -52,6 +52,7 @@ optional arguments:
   --postgres            Force scanning hosts as Postgres
   --mysql               Force scanning hosts as Mysql
   --multiple            Seek multiple username/password pairs on a single host
+  --database DATABASE   try a specific database name
 ```
 
 Use a wordlist generator like [this one](https://github.com/zzztor/intelligence-wordlist-generator) or [this one](https://github.com/sc0tfree/mentalist) to create more effective password lists.
