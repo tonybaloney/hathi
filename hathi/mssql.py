@@ -1,3 +1,4 @@
+import os
 from typing import Tuple
 from hathi.scanner import ScanResult, Scanner
 
@@ -35,8 +36,14 @@ def _mssql_try_host(
         )
         conn.close()
         return ScanResult.Success, host, username, password
-    except pymssql.OperationalError:
-        return ScanResult.BadPassword, host, username, password
+    except pymssql.OperationalError as oe:
+        code, *_ = oe.args[0]
+        if os.getenv("HATHI_DEBUG", False):
+            print(oe.args)
+        if code == 18456:
+            return ScanResult.BadPassword, host, username, password
+        else:
+            return ScanResult.Error, host, username, password
 
 
 class MssqlScanner(Scanner):
