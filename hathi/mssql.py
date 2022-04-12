@@ -1,6 +1,7 @@
 import os
-from typing import Tuple
-from hathi.scanner import ScanResult, Scanner
+from typing import Optional, Tuple
+
+from hathi.scanner import Scanner, ScanResult
 
 try:
     import pymssql
@@ -8,7 +9,6 @@ try:
     MSSQL_SUPPORT = True
 except ImportError:
     MSSQL_SUPPORT = False
-
 
 MSSQL_USERNAME_LIST = """
 admin
@@ -25,7 +25,12 @@ wordpress
 
 
 def _mssql_try_host(
-    scanner: Scanner, host, username, password, database
+    scanner: Scanner,
+    host: str,
+    username: str,
+    password: str,
+    database: str,
+    no_ssl: Optional[bool],
 ) -> Tuple[ScanResult, str, str, str]:
     try:
         conn = pymssql.connect(
