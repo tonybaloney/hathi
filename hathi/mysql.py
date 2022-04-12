@@ -1,8 +1,9 @@
-from typing import Tuple
-from hathi.scanner import ScanResult, Scanner
+from typing import Optional, Tuple
+
+from hathi.scanner import Scanner, ScanResult
 
 try:
-    from MySQLdb import _mysql, OperationalError
+    from MySQLdb import OperationalError, _mysql
 
     MYSQL_SUPPORT = True
 except ImportError:
@@ -24,7 +25,12 @@ wordpress
 
 
 def _mysql_try_host(
-    scanner: Scanner, host, username, password, database
+    scanner: Scanner,
+    host: str,
+    username: str,
+    password: str,
+    database: str,
+    no_ssl: Optional[bool],
 ) -> Tuple[ScanResult, str, str, str]:
     try:
         conn = _mysql.connect(

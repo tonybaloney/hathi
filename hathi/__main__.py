@@ -31,8 +31,8 @@ from enum import Enum
 from typing import Dict, Generator, List, Optional, Set, Tuple, Type, Union
 
 from rich.console import Console
+from rich.progress import BarColumn, Progress
 from rich.table import Table
-from rich.progress import Progress, BarColumn
 
 from hathi.mssql import MssqlScanner
 from hathi.mysql import MysqlScanner
@@ -90,7 +90,8 @@ async def scan(
     verbose=False,
     multiple: bool = False,
     types_to_scan: Set[HostType] = {HostType.Postgres, HostType.Mssql},
-    database: str = None,
+    database: Optional[str] = None,
+    no_ssl: bool = False,
 ):
     open_hosts: List[Tuple[str, HostType]] = []
     with Progress(
@@ -120,7 +121,7 @@ async def scan(
                 f"[green]Scanning {host} as {host_type} with database {_database}"
             )
         scanner = SCANNER_CLS[host_type](
-            host, _database, usernames, passwords, hostname, verbose, multiple
+            host, _database, usernames, passwords, hostname, verbose, multiple, no_ssl
         )
         async for match in scanner.scan():
             matched_connections.append(match)
@@ -171,6 +172,9 @@ def main():
         help="Seek multiple username/password pairs on a single host",
     )
     parser.add_argument("--database", type=str, help="try a specific database name")
+    parser.add_argument(
+        "--no-ssl", action="store_true", help="Disable TLS/SSL connections"
+    )
 
     args = parser.parse_args()
     hosts = args.hosts
@@ -213,6 +217,7 @@ def main():
             multiple=args.multiple,
             types_to_scan=types_to_scan,
             database=args.database,
+            no_ssl=args.no_ssl,
         )
     )
 

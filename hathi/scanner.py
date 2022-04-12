@@ -1,14 +1,22 @@
 import asyncio
+import logging
 from collections import namedtuple
 from enum import Enum
 from typing import List, Optional, Union
 
-from rich.progress import Progress, BarColumn, ProgressColumn, Task
+from rich.logging import RichHandler
+from rich.progress import BarColumn, Progress, ProgressColumn, Task
 from rich.text import Text
+
+FORMAT = "%(message)s"
+logging.basicConfig(
+    level=logging.INFO, format=FORMAT, datefmt="[%X]", handlers=[RichHandler()]
+)
+
+log = logging.getLogger(__name__)
 
 Match = namedtuple("Match", "username password host database data host_type")
 from concurrent.futures import ThreadPoolExecutor, as_completed
-
 
 POOL_SIZE = 10
 
@@ -37,12 +45,12 @@ class ScanResult(Enum):
     Error = 5
 
 
-def call_async_func(func, host, username, password, database):
-    return asyncio.run(func(host, username, password, database))
+def call_async_func(func, host, username, password, database, no_ssl):
+    return asyncio.run(func(host, username, password, database, no_ssl))
 
 
-def call_sync_func(func, host, username, password, database):
-    return func(host, username, password, database)
+def call_sync_func(func, host, username, password, database, no_ssl):
+    return func(host, username, password, database, no_ssl)
 
 
 class Scanner:
@@ -59,6 +67,7 @@ class Scanner:
         hostname: Optional[str] = None,
         verbose=False,
         multiple=False,
+        no_ssl=False,
     ):
         self.host = host
         self.database = database
@@ -74,6 +83,7 @@ class Scanner:
         self.hostname = hostname
         self.verbose = verbose
         self.multiple = multiple
+        self.no_ssl = no_ssl
 
     async def scan(
         self,
@@ -106,6 +116,7 @@ class Scanner:
                                 username,
                                 password.strip(),
                                 self.database,
+                                self.no_ssl,
                             )
                             for password in _passwords
                         ]
@@ -114,7 +125,7 @@ class Scanner:
                             try:
                                 result, host, username, password = future.result()
                             except Exception as exc:
-                                pass
+                                log.error(exc, exc_info=True)
                             else:
                                 if result == ScanResult.Success:
                                     yield Match(
@@ -141,5 +152,6 @@ class Scanner:
                                     break
                                 elif result == ScanResult.Error:
                                     progress.stop()
+                                    log.error(f"Error connecting to {host}")
                                     executor.shutdown(cancel_futures=True)
                                     return
